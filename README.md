@@ -5,6 +5,8 @@ To get started, grab a download [from our releases page](https://github.com/This
 
 If you have any issues or requests, please open an issue or a pull request and we'll look into it as soon as possible!
 
+![javadebugger](https://user-images.githubusercontent.com/15678918/47621857-0d8bfc80-dad4-11e8-87c0-3fb84948120c.PNG)
+
 ## Credits
 Much of the GUI layout from this debugger is inspired from [Monster Debugger](https://demonsters.nl/nl/projects/monsterdebugger).
 
