@@ -1,0 +1,7 @@
+/.settings/
+/bin/
+
+/src/test/
+/export/
+.classpath
+.project
