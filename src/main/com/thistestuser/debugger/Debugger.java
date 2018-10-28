@@ -67,7 +67,7 @@ public class Debugger extends JFrame
 	private JTabbedPane tabbedPane;
 	private boolean showAllFields = false;
 	private boolean showAllMethods = false;
-	private static final String VERSION = "alpha-1.0";
+	private static final String VERSION = "beta-1.0";
 	
 	public Debugger()
 	{
