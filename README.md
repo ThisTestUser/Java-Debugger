@@ -1,7 +1,7 @@
 # Java Debugger
 Java Debugger is a attachable debugger to your java application. It can modify fields, execute methods, or even analyze local variables.
 
-To get started, grab a download [from our releases page](https://github.com/ThisTestUser/Java-Debugger/releases) and follow our wiki to get instuctions on how to debug applications.
+To get started, grab a download [from our releases page](https://github.com/ThisTestUser/Java-Debugger/releases) and visit our [wiki](https://github.com/ThisTestUser/Java-Debugger/wiki) to get instuctions on how to debug applications.
 
 If you have any issues or requests, please open an issue or a pull request and we'll look into it as soon as possible!
 
