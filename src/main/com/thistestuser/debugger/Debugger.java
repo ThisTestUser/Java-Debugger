@@ -738,7 +738,7 @@ public class Debugger extends JFrame
 				clearSpecificSearch.setEnabled(false);
 				List<TreePath> expandedCopy = new ArrayList<>(expanded);
 				updateFilter(specificSearch != null ? (HideableTreeNode)specificSearch.getLastPathComponent() : 
-					(HideableTreeNode)tree.getModel().getRoot(), textField.getText());
+					(HideableTreeNode)tree.getModel().getRoot(), textField.getText(), true);
 				for(TreePath path : expandedCopy)
 					tree.expandPath(path);
 			});
@@ -753,7 +753,7 @@ public class Debugger extends JFrame
 				{
 					List<TreePath> expandedCopy = new ArrayList<>(expanded);
 					updateFilter(specificSearch != null ? (HideableTreeNode)specificSearch.getLastPathComponent() : 
-						(HideableTreeNode)tree.getModel().getRoot(), textField.getText());
+						(HideableTreeNode)tree.getModel().getRoot(), textField.getText(), true);
 					for(TreePath path : expandedCopy)
 						tree.expandPath(path);
 				}
@@ -763,7 +763,7 @@ public class Debugger extends JFrame
 				{
 					List<TreePath> expandedCopy = new ArrayList<>(expanded);
 					updateFilter(specificSearch != null ? (HideableTreeNode)specificSearch.getLastPathComponent() : 
-						(HideableTreeNode)tree.getModel().getRoot(), textField.getText());
+						(HideableTreeNode)tree.getModel().getRoot(), textField.getText(), true);
 					for(TreePath path : expandedCopy)
 						tree.expandPath(path);
 				}
@@ -773,13 +773,16 @@ public class Debugger extends JFrame
 				{
 					List<TreePath> expandedCopy = new ArrayList<>(expanded);
 					updateFilter(specificSearch != null ? (HideableTreeNode)specificSearch.getLastPathComponent() : 
-						(HideableTreeNode)tree.getModel().getRoot(), textField.getText());
+						(HideableTreeNode)tree.getModel().getRoot(), textField.getText(), true);
 					for(TreePath path : expandedCopy)
 						tree.expandPath(path);
 				}
 			});
 			JButton button = new JButton("Refresh");
-			button.addActionListener(a -> refreshTree(textField.getText()));
+			button.addActionListener(a -> {
+				refreshTree(textField.getText());
+				clearSpecificSearch.setEnabled(false);
+			});
 			GridBagConstraints buttonC = new GridBagConstraints();
 			buttonC.anchor = GridBagConstraints.EAST;
 			buttonC.weightx = 1;
@@ -825,7 +828,7 @@ public class Debugger extends JFrame
 								clearSpecificSearch.setEnabled(specificSearch != null);
 								List<TreePath> expandedCopy = new ArrayList<>(expanded);
 								updateFilter(specificSearch != null ? (HideableTreeNode)specificSearch.getLastPathComponent() : 
-									(HideableTreeNode)tree.getModel().getRoot(), textField.getText());
+									(HideableTreeNode)tree.getModel().getRoot(), textField.getText(), true);
 								for(TreePath pth : expandedCopy)
 									tree.expandPath(pth);
 		                    });
@@ -920,21 +923,21 @@ public class Debugger extends JFrame
 			    		
 			    		JPanel leftPanel = new JPanel(new GridBagLayout());
 			    		
+			    		Data data = (Data)table.getValueAt(table.getSelectedRow(), 2);
+			    		Method method = (Method)data.data[1];
+			    		
 			    		GridBagConstraints ownerLabelC = new GridBagConstraints();
 			    		ownerLabelC.insets = new Insets(10, 10, 0, 0);
 			    		ownerLabelC.anchor = GridBagConstraints.NORTHWEST;
 			    		ownerLabelC.fill = GridBagConstraints.HORIZONTAL;
 			    		ownerLabelC.weightx = 1;
-			    		leftPanel.add(new JLabel("Owner: " + ((Class<?>)((Data)table.
-			    			getValueAt(table.getSelectedRow(), 2)).data[0]).getName()), ownerLabelC);
-			    		Data data = (Data)table.getValueAt(table.getSelectedRow(), 2);
+			    		leftPanel.add(new JLabel("Owner: " + method.getDeclaringClass().getName()), ownerLabelC);
 			    		GridBagConstraints accessModC = new GridBagConstraints();
 			    		accessModC.insets = new Insets(10, 10, 0, 0);
 			    		accessModC.anchor = GridBagConstraints.NORTHWEST;
 			    		accessModC.fill = GridBagConstraints.HORIZONTAL;
 			    		accessModC.weightx = 1;
 			    		accessModC.gridy = 1;
-			    		Method method = (Method)data.data[1];
 			    		String methodString = "<b><font color=7f0055>" + Modifier.toString(method.getModifiers()) + "</font></b>";
 			    		if(method.isDefault())
 			    			methodString += "<b><font color=7f0055> default</font></b>";
@@ -2303,8 +2306,17 @@ public class Debugger extends JFrame
 			return panel;
 		}
 		
-		private void updateFilter(HideableTreeNode node, String filterText)
+		private void updateFilter(HideableTreeNode node, String filterText, boolean clear)
 		{
+			if(clear && node != tree.getModel().getRoot())
+			{
+				for(int i = 0; i < ((HideableTreeNode)tree.getModel().getRoot()).getChildCountFilterless(); i++)
+				{
+					HideableTreeNode child = (HideableTreeNode)((HideableTreeNode)tree.getModel().getRoot()).getChildAtFilterless(i);
+					child.filtered = false;
+					updateFilter(child, filterText, false);
+				}
+			}
 			for(int i = 0; i < node.getChildCountFilterless(); i++)
 			{
 				HideableTreeNode child = (HideableTreeNode)node.getChildAtFilterless(i);
@@ -2313,7 +2325,7 @@ public class Debugger extends JFrame
 					child.filtered = false;
 				else
 					child.filtered = true;
-				updateFilter(child, filterText);
+				updateFilter(child, filterText, false);
 			}
 			((DefaultTreeModel)tree.getModel()).reload();
 		}
@@ -2321,6 +2333,7 @@ public class Debugger extends JFrame
 		private void refreshTree(String filter)
 		{
 			expanded.clear();
+			specificSearch = null;
 			deleteChildren((HideableTreeNode)tree.getModel().getRoot());
 			for(Field f : clazz.getDeclaredFields())
 			{
@@ -2538,7 +2551,7 @@ public class Debugger extends JFrame
 							fieldIcon = combineAccess(fieldIcon, volatileCo, 1);
 						else if(Modifier.isStatic(f.getModifiers()) && !placedStatic)
 							fieldIcon = combineAccess(fieldIcon, staticCo, 1);
-						model.addRow(new Object[] {fieldIcon, icon, new Object[] {owner, f, tableValue, nullValue}, inst});
+						model.addRow(new Object[] {fieldIcon, icon, new Data(new Object[] {owner, f, tableValue, nullValue}), inst});
 					}
 					clazz = clazz.getSuperclass();
 				}
