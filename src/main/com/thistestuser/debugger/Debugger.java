@@ -67,7 +67,8 @@ public class Debugger extends JFrame
 	private JTabbedPane tabbedPane;
 	private boolean showAllFields = false;
 	private boolean showAllMethods = false;
-	private static final String VERSION = "beta-1.0";
+	private static boolean isOnTop = false;
+	private static final String VERSION = "beta-1.1";
 	
 	public Debugger()
 	{
@@ -93,7 +94,10 @@ public class Debugger extends JFrame
 		viewMenu.add(enableBreakpointsItem);
 		viewMenu.addSeparator();
 		JCheckBoxMenuItem onTopItem = new JCheckBoxMenuItem("Always on top");
-		onTopItem.addActionListener(a -> setAlwaysOnTop(!isAlwaysOnTop()));
+		onTopItem.addActionListener(a -> {
+			isOnTop = !isOnTop;
+			setAlwaysOnTop(!isAlwaysOnTop());
+		});
 		viewMenu.add(onTopItem);
 		menuBar.add(viewMenu);
 		
@@ -122,7 +126,7 @@ public class Debugger extends JFrame
 		dumpClassItem.addActionListener(a -> {
 			JFrame newFrame = new JFrame();
 			newFrame.setTitle("Dump Resource");
-			newFrame.setBounds(100, 100, 500, 250);
+			newFrame.setBounds(100, 100, 500, 260);
 			newFrame.setResizable(true);
 			newFrame.getContentPane().setLayout(new GridBagLayout());
 			
@@ -174,11 +178,19 @@ public class Debugger extends JFrame
 			selectButtonC.gridx = 1;
 			newFrame.getContentPane().add(selectButton, selectButtonC);
 			
+			JCheckBox tabIsLoader = new JCheckBox("Tab Selected is ClassLoader");
+			GridBagConstraints tabIsLoaderC = new GridBagConstraints();
+			tabIsLoaderC.insets = new Insets(2, 10, 5, 10);
+			tabIsLoaderC.gridy = 3;
+			tabIsLoaderC.fill = GridBagConstraints.BOTH;
+			newFrame.getContentPane().add(tabIsLoader, tabIsLoaderC);
+			
 			JButton submit = new JButton("Dump");
 			GridBagConstraints submitC = new GridBagConstraints();
 			submitC.insets = new Insets(0, 0, 10, 0);
 			submitC.anchor = GridBagConstraints.SOUTH;
-			submitC.gridy = 3;
+			submitC.gridy = 4;
+			submitC.gridwidth = 2;
 			submitC.weightx = 1;
 			submitC.weighty = 1;
 			newFrame.getContentPane().add(submit, submitC);
@@ -187,7 +199,12 @@ public class Debugger extends JFrame
 				{
 					ClassLoader loader = null;
 					if(tabbedPane.getSelectedIndex() > 0)
-						loader = instances.get(tabbedPane.getSelectedIndex() - 1).clazz.getClassLoader();
+					{
+						if(tabIsLoader.isSelected())
+							loader = (ClassLoader)instances.get(tabbedPane.getSelectedIndex() - 1).instance;
+						else
+							loader = instances.get(tabbedPane.getSelectedIndex() - 1).clazz.getClassLoader();	
+					}
 					InputStream stream;
 					if(loader == null)
 						stream = getClass().getResourceAsStream(textField.getText());
@@ -215,6 +232,7 @@ public class Debugger extends JFrame
 			Toolkit toolkit = Toolkit.getDefaultToolkit();
 			Dimension screenSize = toolkit.getScreenSize();
 			newFrame.setLocation((screenSize.width - newFrame.getWidth()) / 2, (screenSize.height - newFrame.getHeight()) / 2);
+			newFrame.setAlwaysOnTop(isOnTop);
 			newFrame.setVisible(true);
 		});
 		dumpClassItem.setToolTipText("Dump class using one of the selected ClassLoaders");
@@ -224,7 +242,7 @@ public class Debugger extends JFrame
 		loadClassItem.addActionListener(a -> {
 			JFrame newFrame = new JFrame();
 			newFrame.setTitle("Load Class");
-			newFrame.setBounds(100, 100, 500, 200);
+			newFrame.setBounds(100, 100, 500, 230);
 			newFrame.setResizable(true);
 			newFrame.getContentPane().setLayout(new GridBagLayout());
 			
@@ -244,11 +262,18 @@ public class Debugger extends JFrame
 			textFieldC.fill = GridBagConstraints.BOTH;
 			newFrame.getContentPane().add(textField, textFieldC);
 			
+			JCheckBox tabIsLoader = new JCheckBox("Tab Selected is ClassLoader");
+			GridBagConstraints tabIsLoaderC = new GridBagConstraints();
+			tabIsLoaderC.insets = new Insets(2, 10, 5, 10);
+			tabIsLoaderC.gridy = 2;
+			tabIsLoaderC.fill = GridBagConstraints.BOTH;
+			newFrame.getContentPane().add(tabIsLoader, tabIsLoaderC);
+			
 			JButton submit = new JButton("Submit");
 			GridBagConstraints submitC = new GridBagConstraints();
 			submitC.insets = new Insets(0, 0, 10, 0);
 			submitC.anchor = GridBagConstraints.SOUTH;
-			submitC.gridy = 2;
+			submitC.gridy = 3;
 			submitC.weightx = 1;
 			submitC.weighty = 1;
 			newFrame.getContentPane().add(submit, submitC);
@@ -257,7 +282,12 @@ public class Debugger extends JFrame
 				{
 					ClassLoader loader = null;
 					if(tabbedPane.getSelectedIndex() > 0)
-						loader = instances.get(tabbedPane.getSelectedIndex() - 1).clazz.getClassLoader();
+					{
+						if(tabIsLoader.isSelected())
+							loader = (ClassLoader)instances.get(tabbedPane.getSelectedIndex() - 1).instance;
+						else
+							loader = instances.get(tabbedPane.getSelectedIndex() - 1).clazz.getClassLoader();
+					}
 					DebuggerHook.injectDebugger(textField.getText(), null, loader);
 				}catch(Exception e)
 				{
@@ -269,6 +299,7 @@ public class Debugger extends JFrame
 			Toolkit toolkit = Toolkit.getDefaultToolkit();
 			Dimension screenSize = toolkit.getScreenSize();
 			newFrame.setLocation((screenSize.width - newFrame.getWidth()) / 2, (screenSize.height - newFrame.getHeight()) / 2);
+			newFrame.setAlwaysOnTop(isOnTop);
 			newFrame.setVisible(true);
 		});
 		loadClassItem.setToolTipText("Load class to Debugger. Only static fields will be editable");
@@ -450,6 +481,7 @@ public class Debugger extends JFrame
 		Toolkit toolkit = Toolkit.getDefaultToolkit();
 		Dimension screenSize = toolkit.getScreenSize();
 		newFrame.setLocation((screenSize.width - newFrame.getWidth()) / 2, (screenSize.height - newFrame.getHeight()) / 2);
+		newFrame.setAlwaysOnTop(isOnTop);
 		newFrame.setVisible(true);
 	}
 	
@@ -1399,7 +1431,7 @@ public class Debugger extends JFrame
 						scrollPane.setBorder(BorderFactory.createEmptyBorder());
 						scrollPane.getViewport().setBackground(Color.WHITE);
 			    		newFrame.add(scrollPane, treeC);
-			    		
+			    		newFrame.setAlwaysOnTop(isOnTop);
 			    		newFrame.setVisible(true);
 			        }
 				}
@@ -2089,7 +2121,7 @@ public class Debugger extends JFrame
 			    		setValueC.weighty = 1;
 			    		setValueC.gridy = 4;
 			    		newFrame.add(setValue, setValueC);
-			    		
+			    		newFrame.setAlwaysOnTop(isOnTop);
 			    		newFrame.setVisible(true);
 			        }
 			    }
@@ -3050,7 +3082,7 @@ public class Debugger extends JFrame
 				actions.add(edit);
 				
 				panel.add(actions, BorderLayout.PAGE_END);
-				if(JOptionPane.showConfirmDialog(null, panel, "Edit Array",
+				if(JOptionPane.showConfirmDialog(Debugger.this, panel, "Edit Array",
 			        JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION)
 				{
 					this.array = Array.newInstance(type, values.size());
