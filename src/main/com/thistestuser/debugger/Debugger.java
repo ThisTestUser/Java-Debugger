@@ -319,7 +319,7 @@ public class Debugger extends JFrame
 			@Override
 			public void windowClosing(WindowEvent we)
 			{
-				int dialogResult = JOptionPane.showConfirmDialog(null, "Do you want to close the main program?",
+				int dialogResult = JOptionPane.showConfirmDialog(Debugger.this, "Do you want to close the main program?",
 					"Debugger", JOptionPane.YES_NO_CANCEL_OPTION);
 				if(dialogResult == JOptionPane.YES_OPTION)
 					System.exit(0);
@@ -1014,7 +1014,7 @@ public class Debugger extends JFrame
 				    			JLabel text = new JLabel("Value:   ");
 				    			innerPnl.add(text);
 				    			ListButton arrButton = new ListButton("Edit Array", Array.newInstance(clazz.getComponentType(),
-				    				0), clazz.getComponentType());
+				    				0), clazz.getComponentType(), panel);
 					    		innerPnl.add(arrButton);
 					    		JCheckBox nullBox = new JCheckBox("Null");
 					    		nullBox.addActionListener(a -> {
@@ -1156,7 +1156,7 @@ public class Debugger extends JFrame
 													accessible = enumFields.get(comboBox.getSelectedIndex()).isAccessible();
 													modifier = enumFields.get(comboBox.getSelectedIndex()).getModifiers();
 													enumFields.get(comboBox.getSelectedIndex()).setAccessible(true);
-													modifiersField.setInt(enumFields.get(comboBox.getSelectedIndex()), 
+													modifiersField.setInt(enumFields.get(comboBox.getSelectedIndex()),
 														enumFields.get(comboBox.getSelectedIndex()).getModifiers() & ~Modifier.FINAL);
 						    						args.add(enumFields.get(comboBox.getSelectedIndex()).get(null));
 						    						enumFields.get(comboBox.getSelectedIndex()).setAccessible(accessible);
@@ -1504,17 +1504,21 @@ public class Debugger extends JFrame
 			    		newFrame.setResizable(true);
 			    		newFrame.getContentPane().setLayout(new GridBagLayout());
 			    		
+			    		Data data = (Data)table.getValueAt(table.getSelectedRow(), 2);
+			    		boolean isField = data.data[1] instanceof Field;
+			    		Class<?> type = isField ? ((Field)data.data[1]).getType() 
+			    			: ((Class<?>)data.data[4]).getComponentType(); 
+			    		
 			    		GridBagConstraints ownerLabelC = new GridBagConstraints();
 			    		ownerLabelC.insets = new Insets(10, 10, 0, 0);
 			    		ownerLabelC.anchor = GridBagConstraints.NORTHWEST;
 			    		ownerLabelC.fill = GridBagConstraints.HORIZONTAL;
 			    		ownerLabelC.weightx = 1;
-			    		newFrame.add(new JLabel("Owner: " + ((Class<?>)((Data)table.
-			    			getValueAt(table.getSelectedRow(), 2)).data[0]).getName()), ownerLabelC);
-			    		Data data = (Data)table.getValueAt(table.getSelectedRow(), 2);
-			    		boolean isField = data.data[1] instanceof Field;
-			    		Class<?> type = isField ? ((Field)data.data[1]).getType() 
-			    			: ((Class<?>)data.data[4]).getComponentType(); 
+			    		if(isField)
+			    			newFrame.add(new JLabel("Owner: " + ((Field)data.data[1]).getDeclaringClass().getName()), ownerLabelC);
+			    		else
+			    			newFrame.add(new JLabel("Owner: " + ((Class<?>)((Data)table.
+			    				getValueAt(table.getSelectedRow(), 2)).data[0]).getName()), ownerLabelC);
 			    		if(isField)
 			    		{
 				    		GridBagConstraints accessModC = new GridBagConstraints();
@@ -1552,8 +1556,9 @@ public class Debugger extends JFrame
 			    				accessible = ((Field)data.data[1]).isAccessible();
 			    				((Field)data.data[1]).setAccessible(true);
 			    			}
-			    			value = isField ? ((Field)data.data[1]).get(data.data[2]) : Array.get(data.data[1], 
-			    				(int)data.data[2]);
+			    			if(table.getValueAt(table.getSelectedRow(), 0) != null)
+			    				value = isField ? ((Field)data.data[1]).get(data.data[2]) : Array.get(data.data[1], 
+			    					(int)data.data[2]);
 			    			if(isField)
 			    				((Field)data.data[1]).setAccessible(accessible);
 			    		}catch(Exception e)
@@ -1570,6 +1575,8 @@ public class Debugger extends JFrame
 			    		newFrame.add(panel, panelC);
 			    		JCheckBox nullBox = new JCheckBox("Null");
 			    		JButton setValue = new JButton("Set Value");
+			    		if(table.getValueAt(table.getSelectedRow(), 0) == null)
+			    			setValue.setEnabled(false);
 			    		if(type == boolean.class || Enum.class.isAssignableFrom(type))
 			    		{
 			    			GridBagConstraints textC = new GridBagConstraints();
@@ -1594,7 +1601,11 @@ public class Debugger extends JFrame
 			    						enumFields.add(f);
 			    				for(Field f : enumFields)
 			    					comboBox.addItem(f.getName());
-			    				if(value == null)
+			    				if(table.getValueAt(table.getSelectedRow(), 0) == null)
+			    				{
+			    					nullBox.setEnabled(false);
+			    					comboBox.setEnabled(false);
+			    				}else if(value == null)
 			    				{
 			    					nullBox.setSelected(true);
 			    					comboBox.setEnabled(false);
@@ -1771,16 +1782,19 @@ public class Debugger extends JFrame
 			    			textC.anchor = GridBagConstraints.NORTHWEST;
 			    			textC.insets = new Insets(3, 0, 10, 0);
 			    			panel.add(text, textC);
-			    			ListButton arrButton = new ListButton("Edit Array", value == null ? Array.newInstance(type.getComponentType(),
-			    				0) : value, 
-			    				type.getComponentType());
+			    			ListButton arrButton = new ListButton("Edit Array", value == null ? 
+			    				Array.newInstance(type.getComponentType(), 0) : value, type.getComponentType(), panel);
 			    			GridBagConstraints arrButtonC = new GridBagConstraints();
 			    			arrButtonC.anchor = GridBagConstraints.NORTHWEST;
 			    			arrButtonC.gridx = 1;
 			    			arrButtonC.weightx = 1;
 				    		panel.add(arrButton, arrButtonC);
 				    		
-				    		if(value == null)
+				    		if(table.getValueAt(table.getSelectedRow(), 0) == null)
+		    				{
+		    					nullBox.setEnabled(false);
+		    					arrButton.setEnabled(false);
+		    				}else if(value == null)
 				    		{
 				    			nullBox.setSelected(true);
 				    			arrButton.setEnabled(false);
@@ -1916,7 +1930,11 @@ public class Debugger extends JFrame
 				    		valueC.weightx = 1;
 				    		panel.add(textField, valueC);
 				    		
-				    		if(value == null)
+				    		if(table.getValueAt(table.getSelectedRow(), 0) == null)
+		    				{
+		    					nullBox.setEnabled(false);
+		    					textField.setEnabled(false);
+		    				}else if(value == null)
 				    		{
 				    			nullBox.setSelected(true);
 				    			textField.setEnabled(false);
@@ -2978,7 +2996,7 @@ public class Debugger extends JFrame
 	{
 		public Object array;
 
-		public ListButton(String text, Object array, Class<?> type)
+		public ListButton(String text, Object array, Class<?> type, JPanel parent)
 		{
 			super(text);
 			this.array = array;
@@ -3095,7 +3113,7 @@ public class Debugger extends JFrame
 				actions.add(edit);
 				
 				panel.add(actions, BorderLayout.PAGE_END);
-				if(JOptionPane.showConfirmDialog(Debugger.this, panel, "Edit Array",
+				if(JOptionPane.showConfirmDialog(parent, panel, "Edit Array",
 			        JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION)
 				{
 					this.array = Array.newInstance(type, values.size());
@@ -3179,7 +3197,7 @@ public class Debugger extends JFrame
     			textC.insets = new Insets(3, 0, 10, 0);
     			panel.add(text, textC);
     			ListButton arrButton = new ListButton("Edit Array", o == null ? Array.newInstance(type.getComponentType(),
-    				0) : o, type.getComponentType());
+    				0) : o, type.getComponentType(), panel);
     			GridBagConstraints arrButtonC = new GridBagConstraints();
     			arrButtonC.anchor = GridBagConstraints.NORTHWEST;
     			arrButtonC.gridx = 1;
