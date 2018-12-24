@@ -16,11 +16,15 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -68,7 +72,7 @@ public class Debugger extends JFrame
 	private boolean showAllFields = false;
 	private boolean showAllMethods = false;
 	private static boolean isOnTop = false;
-	private static final String VERSION = "beta-1.1";
+	private static final String VERSION = "2.0";
 	
 	public Debugger()
 	{
@@ -428,6 +432,27 @@ public class Debugger extends JFrame
 		setVisible(true);
 	}
 	
+	public boolean isInstInit(String clazz, Object instance, ClassLoader loader) throws Exception
+	{
+		//Check duplicates
+		Instance inst = null;
+		Class<?> cl;
+		if(loader != null)
+			cl = Class.forName(clazz, true, loader);
+		else
+			cl = Class.forName(clazz);
+		List<Instance> instancesCopy = new ArrayList<>(instances);
+		for(Instance in : instancesCopy)
+			if(in != null && in.clazz == cl && in.instance == instance)
+			{
+				inst = in;
+				break;
+			}
+		if(inst == null)
+			return false;
+		return inst.init;
+	}
+	
 	public void addClass(String clazz, Object instance, ClassLoader loader) throws Exception
 	{
 		//Check duplicates
@@ -444,6 +469,54 @@ public class Debugger extends JFrame
 		JPanel panel = inst.setupJPanel();
 		tabbedPane.addTab(clazz, panel);
 		tabbedPane.setTabComponentAt(tabbedPane.indexOfComponent(panel), getTabComponent(clazz, tabbedPane, panel, true));
+	}
+	
+	public void injectBreakpoint(String clazz, Object instance, ClassLoader loader, 
+		int id, Object[] input, int mode, boolean override) throws Exception
+	{
+		Class<?> cl;
+		if(loader != null)
+			cl = Class.forName(clazz, true, loader);
+		else
+			cl = Class.forName(clazz);
+		Instance inst = null;
+		for(Instance in : instances)
+			if(in.clazz == cl && in.instance == instance)
+				inst = in;
+		if(inst == null)
+			inst = new Instance(cl, instance);
+		if(!instances.contains(inst))
+		{
+			instances.add(inst);
+			JPanel panel = inst.setupJPanel();
+			tabbedPane.addTab(clazz, panel);
+			tabbedPane.setTabComponentAt(tabbedPane.indexOfComponent(panel), getTabComponent(clazz, tabbedPane, panel, true));
+		}
+		DefaultTableModel model = (DefaultTableModel)inst.breakpointsTable.getModel();
+		int index = -1;
+		for(int i = 0; i < model.getRowCount(); i++)
+			if((int)model.getValueAt(i, 0) == id)
+			{
+				index = i;
+				break;
+			}
+		if(index != -1 && !override)
+			return;
+		AtomicBoolean bool = new AtomicBoolean((mode == 0 && inst.passBox.isSelected()) || mode == 1);
+		if(index != -1)
+		{
+			long prevTime = (long)model.getValueAt(index, 1);
+			((AtomicBoolean)model.getValueAt(index, 4)).set(true);
+			model.removeRow(index);
+			model.insertRow(index, new Object[] {id, System.currentTimeMillis(), System.currentTimeMillis() - prevTime,
+				mode, bool, new Data(new Object[] {input, "View"})});
+		}else
+			model.addRow(new Object[] {id, System.currentTimeMillis(), 0L,
+				mode, bool, new Data(new Object[] {input, "View"})});
+		while(!bool.get())
+		{
+			Thread.sleep(100);
+		}
 	}
 	
 	public static void showErrorDialog(String message, Exception e)
@@ -581,9 +654,12 @@ public class Debugger extends JFrame
 		private JPanel breakpointPanel;
 		private MyTable fieldsTable;
 		private MyTable methodsTable;
+		private MyTable breakpointsTable;
+		private JCheckBox passBox;
 		private TreePath specificSearch = null;
 		private Class<?> tableClazz;
 		private Object tableValue;
+		public boolean init;
 		
 		public Instance(Class<?> clazz, Object instance)
 		{
@@ -901,7 +977,7 @@ public class Debugger extends JFrame
 			JTabbedPane fieldMethodsTab = new JTabbedPane();
 			fieldMethodsTab.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 			JPanel jMethod = new JPanel(new BorderLayout());
-			methodsTable = new MyTable(0, 3, false);
+			methodsTable = new MyTable(0, 3, 0);
 			methodsTable.setAutoCreateRowSorter(true);
 			methodsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 			methodsTable.addMouseListener(new MouseAdapter()
@@ -1486,9 +1562,9 @@ public class Debugger extends JFrame
 			methodsTable.setRowHeight(25);
 			jMethod.add(new JScrollPane(methodsTable), BorderLayout.CENTER);
 			JPanel jField = new JPanel(new BorderLayout());
-			fieldsTable = new MyTable(0, 4, true);
+			fieldsTable = new MyTable(0, 4, 1);
 			fieldsTable.setAutoCreateRowSorter(true);
-			fieldsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+			fieldsTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
 			fieldsTable.addMouseListener(new MouseAdapter()
 			{
 				@Override
@@ -2250,31 +2326,168 @@ public class Debugger extends JFrame
 			breakpointsLabel.setBackground(new Color(105, 105, 105));
 			breakpointsLabel.setForeground(Color.WHITE);
 			breakpointPanel.add(breakpointsLabel, BorderLayout.NORTH);
-			MyTable breakpointsTable = new MyTable(20, 6, false);
+			breakpointsTable = new MyTable(0, 6, 2);
 			breakpointsTable.setShowHorizontalLines(false);
+			breakpointsTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+			breakpointsTable.addMouseListener(new MouseAdapter()
+			{
+				@Override
+			    public void mousePressed(MouseEvent mouseEvent)
+				{
+			        JTable table = (JTable)mouseEvent.getSource();
+			        if(mouseEvent.getClickCount() == 2 && table.getSelectedRow() != -1 && table.getSelectedColumn() == 5)
+			        {
+			        	Object[] values = (Object[])((Data)table.getValueAt(table.getSelectedRow(), 5)).data[0];
+			        	if(values == null)
+			        		values = new Object[0];
+			        	AtomicBoolean bool = (AtomicBoolean)table.getValueAt(table.getSelectedRow(), 4);
+			        	JPanel panel = new JPanel();
+						panel.setBounds(100, 100, 300, 400);
+						panel.setLayout(new BorderLayout());
+						
+						JTable jtable = new JTable()
+						{
+							@Override
+							public boolean isCellEditable(int row, int column)
+							{
+								return false;
+							}
+						};
+						jtable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+						jtable.getTableHeader().setReorderingAllowed(false);
+						DefaultTableModel lm = new DefaultTableModel();
+						lm.addColumn("#");
+						lm.addColumn("Type");
+						lm.addColumn("Value");
+						int i = 0;
+						for(Object o : values)
+						{
+							String type = o != null ? getArrayName(o.getClass()) : "";
+							lm.addRow(new Object[]{i, type, o});
+							i++;
+						}
+						jtable.setModel(lm);
+						jtable.getColumn("Value").setCellRenderer(new DefaultTableCellRenderer()
+						{
+							@Override
+							public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, 
+								boolean hasFocus, int row, int column)
+							{
+								if(value != null && value.getClass().isArray())
+									value = getArrayName(value.getClass());
+								Component cell = super.getTableCellRendererComponent(table, value, isSelected,
+						            hasFocus, row, column);
+								if(!cell.getBackground().equals(table.getSelectionBackground()))
+									cell.setBackground(Color.WHITE);
+								if(column == 2 && value == null && !isSelected)
+									cell.setBackground(Color.RED);
+								return cell;
+							}
+						});
+						
+						panel.add(new JScrollPane(jtable), BorderLayout.CENTER);
+						if(JOptionPane.showOptionDialog(null, panel, "View Array",
+					        JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE, null, new String[] {"Ok", "Pass"}, null) == 1)
+						{
+							bool.set(true);
+							int newRow = -1;
+							for(int r = 0; r < table.getRowCount(); r++)
+								if(table.getValueAt(r, 4) == bool)
+								{
+									newRow = r;
+									break;
+								}
+							((DefaultTableModel)table.getModel()).fireTableCellUpdated(newRow, 4);
+						}
+			        }
+				}
+			});
+			TableColumnModel colModB = breakpointsTable.getTableHeader().getColumnModel();
+			TableColumn tabColB0 = colModB.getColumn(0);
+			tabColB0.setHeaderValue("ID");
+			TableColumn tabColB1 = colModB.getColumn(1);
+			tabColB1.setHeaderValue("Time");
+			tabColB1.setCellRenderer(new DefaultTableCellRenderer()
+			{
+				private SimpleDateFormat format = new SimpleDateFormat("dd MMM yyyy HH:mm:ss");
+				
+				@Override
+				public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column)
+				{
+					Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+					((JLabel)c).setText(format.format(new Date((long)value)));
+					return c;
+				}
+			});
+			TableColumn tabColB2 = colModB.getColumn(2);
+			tabColB2.setHeaderValue("Time Difference");
+			tabColB2.setCellRenderer(new DefaultTableCellRenderer()
+			{
+				@Override
+				public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column)
+				{
+					Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+					long diff = (long)value;
+					String diffMS = String.valueOf(diff % 1000);
+					String diffSeconds = String.valueOf(diff / 1000 % 60);  
+					String diffMinutes = String.valueOf(diff / 60000 % 60);
+					String diffHours = String.valueOf(diff / 3600000);
+					if(diffSeconds.length() == 1)
+						diffSeconds = "0" + diffSeconds;
+					if(diffMinutes.length() == 1)
+						diffMinutes = "0" + diffMinutes;
+					if(diffHours.length() == 1)
+						diffHours = "0" + diffHours;
+					while(diffMS.length() != 4)
+						diffMS = "0" + diffMS;
+					((JLabel)c).setText(diffHours + ":" + diffMinutes + ":" + diffSeconds + " " + diffMS);
+					return c;
+				}
+			});
+			TableColumn tabColB3 = colModB.getColumn(3);
+			tabColB3.setHeaderValue("Mode");
+			TableColumn tabColB4 = colModB.getColumn(4);
+			tabColB4.setHeaderValue("Pass");
+			TableColumn tabColB5 = colModB.getColumn(5);
+			tabColB5.setHeaderValue("View");
+			tabColB5.setCellRenderer(new TableButtonRenderer());
 			breakpointsTable.setGridColor(Color.LIGHT_GRAY);
 			breakpointsTable.setRowHeight(25);
 			breakpointPanel.add(new JScrollPane(breakpointsTable), BorderLayout.CENTER);
 			JPanel bottomBreakpointPanel = new JPanel(new GridBagLayout());
-			JLabel filterP2 = new JLabel("   filter: ");
-			filterP2.setMinimumSize(filterP2.getPreferredSize());
-			bottomBreakpointPanel.add(filterP2, new GridBagConstraints());
-			JTextField textField2 = new JTextField(20);
-			textField2.setMinimumSize(textField2.getPreferredSize());
-			GridBagConstraints textFieldC2 = new GridBagConstraints();
-			textFieldC2.gridx = 1;
-			bottomBreakpointPanel.add(textField2, textFieldC2);
-			JCheckBox passBox = new JCheckBox("Pass", true);
+			passBox = new JCheckBox("Pass", true);
 			GridBagConstraints passBoxC = new GridBagConstraints();
 			passBoxC.anchor = GridBagConstraints.EAST;
 			passBoxC.weightx = 1;
-			passBoxC.gridx = 2;
 			passBoxC.insets = new Insets(0, 0, 0, 10);
 			bottomBreakpointPanel.add(passBox, passBoxC);
-			JButton clearButton = new JButton("Clear breakpoints");
+			JButton clearButton = new JButton("Pass and Delete Selected Breakpoints");
+			clearButton.addActionListener(new ActionListener()
+			{
+				@Override
+				public void actionPerformed(ActionEvent e)
+				{
+					for(int index : breakpointsTable.getSelectedRows())
+						((AtomicBoolean)breakpointsTable.getValueAt(index, 4)).set(true);
+					int[] indices = Arrays.copyOf(breakpointsTable.getSelectedRows(), breakpointsTable.getSelectedRows().length);
+					Arrays.sort(indices);
+					int left = 0;
+				    int right = indices.length - 1;
+				    while(left < right)
+				    {
+				    	int temp = indices[left];
+				    	indices[left] = indices[right];
+				    	indices[right] = temp;
+				        left++;
+				        right--;
+				    }
+				    for(int i : indices)
+				    	((DefaultTableModel)breakpointsTable.getModel()).removeRow(i);
+				}
+			});
 			GridBagConstraints clearButtonC = new GridBagConstraints();
 			clearButtonC.anchor = GridBagConstraints.EAST;
-			clearButtonC.gridx = 3;
+			clearButtonC.gridx = 1;
 			clearButtonC.insets = new Insets(0, 0, 0, 10);
 			bottomBreakpointPanel.add(clearButton, clearButtonC);
 			bottomBreakpointPanel.setMinimumSize(new Dimension(0, 0));
@@ -2321,6 +2534,7 @@ public class Debugger extends JFrame
 			splitPane2C.insets = new Insets(3, 3, 3, 3);
 			panel.add(splitPane2, splitPane2C);
 			refreshTree(textField.getText());
+			init = true;
 			return panel;
 		}
 		
@@ -2755,12 +2969,12 @@ public class Debugger extends JFrame
 		
 		private class MyTable extends JTable
 		{
-			private boolean isFieldTable;
+			private int tablemode;
 			
-			public MyTable(int numRows, int numColumns, boolean isFieldTable)
+			public MyTable(int numRows, int numColumns, int tablemode)
 			{
 				super(numRows, numColumns);
-				this.isFieldTable = isFieldTable;
+				this.tablemode = tablemode;
 			}
 
 			@Override
@@ -2769,8 +2983,10 @@ public class Debugger extends JFrame
 				Component returnComp = super.prepareRenderer(renderer, row, column);
 				if(!returnComp.getBackground().equals(getSelectionBackground()))
 					returnComp.setBackground(row % 2 == 0 ? UIManager.getColor("Panel.background") : Color.WHITE);
-				if(column == 3 && isFieldTable && ((Data)getValueAt(row, 2)).data[3].equals(true) && selectionModel.getLeadSelectionIndex() != row)
+				if(column == 3 && tablemode == 1 && ((Data)getValueAt(row, 2)).data[3].equals(true) && selectionModel.getLeadSelectionIndex() != row)
 					returnComp.setBackground(Color.RED);
+				if(column == 4 && tablemode == 2 && ((AtomicBoolean)getValueAt(row, 4)).get() == true && selectionModel.getLeadSelectionIndex() != row)
+					returnComp.setBackground(Color.GREEN);
 				return returnComp;
 			}
 			
@@ -2984,11 +3200,11 @@ public class Debugger extends JFrame
 		@Override
 		public String toString()
 		{
-				if(data[1] instanceof Field)
-					return ((Field)data[1]).getName();
-				else if(data[1] instanceof Method)
-					return ((Method)data[1]).getName();
-				return "";
+			if(data[1] instanceof Field)
+				return ((Field)data[1]).getName();
+			else if(data[1] instanceof Method)
+				return ((Method)data[1]).getName();
+			return data[1].toString();
 		}
 	}
 	
@@ -3347,6 +3563,31 @@ public class Debugger extends JFrame
 				return o;
 			}else
 				return o;
+		}
+	}
+	
+	public class TableButtonRenderer extends JButton implements TableCellRenderer
+	{
+		public TableButtonRenderer()
+		{
+			setOpaque(true);
+		}
+
+		@Override
+		public Component getTableCellRendererComponent(JTable table, Object value,
+			boolean isSelected, boolean hasFocus, int row, int column)
+		{
+			if(isSelected)
+			{
+				setForeground(table.getSelectionForeground());
+				setBackground(table.getSelectionBackground());
+			}else
+			{
+				setForeground(table.getForeground());
+				setBackground(UIManager.getColor("Button.background"));
+			}
+			setText(((Data)value).data[1].toString());
+			return this;
 		}
 	}
 }
